@@ -1,0 +1,46 @@
+# --- Office / Excel temporary files ---
+*.tmp
+~$*
+*.bak
+*.lock
+*.lnk
+*.xlk
+
+# 忽略 Excel 自动生成的备份和临时文件
+*.xlsb
+*.xlsm~
+*.xlsx~
+
+# --- Logs / Text outputs ---
+*.log
+*.txt
+*.out
+*.bak
+
+# --- Build / Output folders ---
+/dist/
+/build/
+/out/
+/bin/
+/obj/
+
+# --- Python cache (若以后扩展用 Python 脚本) ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+
+# --- VSCode project files ---
+.vscode/
+.history/
+*.code-workspace
+
+# --- OS generated files ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Git ---
+.gitignore~

@@ -4,6 +4,7 @@ Option Explicit
 ' ===== 顶层入口 =====
 Public Sub RunCompoundingPlan()
     PlanFixed40Core True, True
+    Call Sanity_Post_AllocWindow
 End Sub
 
 ' 主流程
@@ -362,6 +363,19 @@ Public Sub AllocateOrdersAsNeeded( _
                 firstAllocIdx = nAlloc + 1
                 capLeft = batches(nbatches).EffCapT
             End If
+            ' --- WINDOW GUARD: stop allocating to this batch if order starts after its window ---
+            If batches(nbatches).anchor > 0 Then
+                Dim validThru As Date
+                validThru = DateAdd("d", batches(nbatches).windowDays - 1, batches(nbatches).anchor)
+                If orders(i).StartDate > validThru Then
+                    ' Current order starts beyond this batch's validity window ? open a new batch
+                    StartNewBatch batches, nbatches, 0, effCap, windowDays, horizonDays
+                    batchMinStart = 0
+                    firstAllocIdx = nAlloc + 1
+                    capLeft = batches(nbatches).EffCapT
+                End If
+            End If
+' -------------------------------------------------------------------------------
 
             ' ??????
             take = IIf(remain <= capLeft, remain, capLeft)
@@ -527,4 +541,26 @@ Private Sub MergeTailIfPossible(ByRef batches() As Batch, ByRef nbatches&, _
     End If
 End Sub
 
+Public Sub Sanity_Post_AllocWindow()
+    Dim ws As Worksheet: Set ws = GetSheetByNameSafe(SHEET_ALLOC, True)  ' "CompoundingAllocation"
+    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    If lastRow < 2 Then Exit Sub
+
+    Dim r As Long, bad As Long
+    For r = 2 To lastRow
+        Dim startD As Date, validThru As Date, anchor As Date, windowDays As Long
+        startD = NzDate(ws.Cells(r, "B").Value)  ' Start date ??B
+        anchor = NzDate(ws.Cells(r, "E").Value)  ' ?????? Anchor ??E(????????)
+        ' ? Allocation ?????? ValidThru,?? Anchor+WindowDays-1 ??
+        ' ?? WindowDays ??????,???? Window(d) ???? Allocation,???????
+        windowDays = ReadWindowDays()
+        validThru = DateAdd("d", windowDays - 1, anchor)
+
+        If startD > validThru Then bad = bad + 1
+    Next
+
+    If bad > 0 Then
+        Err.Raise 1021, , bad & " allocation row(s) violate batch window (Start date > Valid thru)."
+    End If
+End Sub
 

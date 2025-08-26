@@ -1,7 +1,7 @@
 Attribute VB_Name = "modConst"
 
 Option Explicit
-Public Const PRODUCT_VERSION As String = "0.1.1"
+Public Const PRODUCT_VERSION As String = "0.1.2"
 
 ' ========= Sheet & Column Names =========
 Public Const SHEET_SRC   As String = "Compounding"                ' ????

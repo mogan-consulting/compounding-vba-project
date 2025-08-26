@@ -207,3 +207,24 @@ Public Function Max3(ByVal a As Long, ByVal b As Long, ByVal c As Long) As Long
     Max3 = Application.Max(a, b, c)
 End Function
 
+' === NEW: inclusive overlap of two [start, end] date ranges, returns number of days (>=0) ===
+Public Function DaysOverlapInclusive(ByVal aStart As Date, ByVal aEnd As Date, _
+                                     ByVal bStart As Date, ByVal bEnd As Date) As Long
+    If aEnd < aStart Then
+        DaysOverlapInclusive = 0
+        Exit Function
+    End If
+    If bEnd < bStart Then
+        DaysOverlapInclusive = 0
+        Exit Function
+    End If
+    Dim s As Date, e As Date
+    If aStart > bStart Then s = aStart Else s = bStart
+    If aEnd < bEnd Then e = aEnd Else e = bEnd
+    If e < s Then
+        DaysOverlapInclusive = 0
+    Else
+        DaysOverlapInclusive = DateDiff("d", s, e) + 1
+    End If
+End Function
+

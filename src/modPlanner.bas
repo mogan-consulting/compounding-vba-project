@@ -1,9 +1,16 @@
 Attribute VB_Name = "modPlanner"
 Option Explicit
 
+
 ' ===== é¡¶å±‚å…¥å£ =====
 Public Sub RunCompoundingPlan()
     PlanFixed40Core True, True
+    ' === FINAL: rebuild summary from actual allocation ===
+    On Error Resume Next
+    RebuildBatchSummaryFromAllocation
+    On Error GoTo 0
+
+    Call Sanity_Post_AllocWindow
 End Sub
 
 ' ä¸»æµç¨‹
@@ -169,7 +176,7 @@ Private Sub ReadOrders(ByVal ws As Worksheet, _
             .PlanQty = qty
             .UsageT = UsageT
         End With
-
+            If cFGType > 0 Then orders(nOrders).fgType = NzText(ws.Cells(r, cFGType).Value, "") Else orders(nOrders).fgType = ""
 
         'End If
 ContinueRow:
@@ -258,15 +265,15 @@ Public Sub ValidateConsistency( _
     Next i
 End Sub
 
-' ²¹¶¡ 1£ºÃ÷Ï¸Ò³£¨CompoundingAllocation£©
-' ÔÚ Anchor ºóÃæÊä³ö Valid thru = Anchor + Window(d) - 1
+'  1Ï¸Ò³CompoundingAllocation
+'  Anchor  Valid thru = Anchor + Window(d) - 1
 '======================
 Public Sub WriteAllocationSheet(ByRef alloc() As tAlloc, ByVal nAlloc As Long)
     Dim ws As Worksheet
     Dim i As Long, windowDays As Long
     Dim a() As Variant
 
-    windowDays = ReadWindowDays()                      ' ÀýÈç 21
+    windowDays = ReadWindowDays()                      '  21
     Set ws = GetSheetByNameSafe(SHEET_ALLOC, True)     ' "CompoundingAllocation"
 
     ws.Cells.Clear
@@ -282,7 +289,7 @@ Public Sub WriteAllocationSheet(ByRef alloc() As tAlloc, ByVal nAlloc As Long)
         a(i, 3) = alloc(i).EndDate
         a(i, 4) = alloc(i).BatchNo
         a(i, 5) = alloc(i).anchor
-        a(i, 6) = DateAdd("d", windowDays - 1, alloc(i).anchor) ' ÓÐÐ§ÆÚ£¨º¬¶Ëµã£©
+        a(i, 6) = DateAdd("d", windowDays - 1, alloc(i).anchor) ' Ð§Ú£Ëµã£©
         a(i, 7) = RoundTo(alloc(i).UsageT, 3)
         a(i, 8) = alloc(i).horizonDays
     Next i
@@ -312,7 +319,7 @@ Public Sub WriteBatchSummarySheet(ByRef batches() As tBatch, ByVal nbatches As L
     For i = 1 To nbatches
         a(i, 1) = batches(i).BatchNo
         a(i, 2) = batches(i).anchor
-        a(i, 3) = DateAdd("d", batches(i).windowDays - 1, batches(i).anchor) ' ÓÐÐ§ÆÚ£¨º¬¶Ëµã£©
+        a(i, 3) = DateAdd("d", batches(i).windowDays - 1, batches(i).anchor) ' Ð§Ú£Ëµã£©
         a(i, 4) = batches(i).FirstStart
         a(i, 5) = batches(i).LastStart
         a(i, 6) = RoundTo(batches(i).AllocatedT, 3)
@@ -327,6 +334,7 @@ Public Sub WriteBatchSummarySheet(ByRef batches() As tBatch, ByVal nbatches As L
     ws.Columns("B:E").NumberFormat = "yyyy-mm-dd"      ' Anchor/ValidThru/First/Last start
     ws.Columns("F:H").NumberFormat = "0.000"           ' Allocated/EffCap/Remaining
     ws.Columns.AutoFit
+    RebuildBatchSummaryFromAllocation
 End Sub
 
 Public Sub AllocateOrdersAsNeeded( _
@@ -339,8 +347,13 @@ Public Sub AllocateOrdersAsNeeded( _
     Dim batchMinStart As Date     ' ???????????
     Dim firstAllocIdx As Long     ' ??? alloc() ?????
     Dim leadDays As Long: leadDays = ReadLeadDays()
+    Dim orderStartIdx As Long
+    ' Added for daily split
+    Dim totalDays As Long, plannedDays As Long
+    Dim dailyU As Double
+    Dim cursorDate As Date
 
-    ' ——— ?????(Anchor ?? 0,??????????)
+    '  ?????(Anchor ?? 0,??????????)
     If nbatches = 0 Then
         StartNewBatch batches, nbatches, 0, effCap, windowDays, horizonDays
         batchMinStart = 0
@@ -350,7 +363,7 @@ Public Sub AllocateOrdersAsNeeded( _
     For i = 1 To nOrders
         remain = RoundTo(orders(i).UsageT, 4)
         If remain <= 0 Then GoTo ContinueOrder
-
+        orderStartIdx = nAlloc + 1
         Do While remain > 0
             ' ???????
             capLeft = RoundTo(batches(nbatches).EffCapT - batches(nbatches).AllocatedT, 4)
@@ -362,61 +375,137 @@ Public Sub AllocateOrdersAsNeeded( _
                 firstAllocIdx = nAlloc + 1
                 capLeft = batches(nbatches).EffCapT
             End If
+                           
+                If batches(nbatches).anchor > 0 Then
+                    Dim windowStart As Date, validThru As Date
+                    windowStart = batches(nbatches).anchor
+                    validThru = DateAdd("d", windowDays - 1, windowStart)
+                
+                    ' per-day usage & unplanned cursor day
+                    ' totalDays/dailyU declared above
+                    totalDays = DateDiff("d", orders(i).StartDate, orders(i).EndDate) + 1
+                    If totalDays < 1 Then totalDays = 1
+                    dailyU = orders(i).UsageT / totalDays
+                
+                    ' plannedDays/cursorDate declared above
+                    If dailyU > 0# Then
+                        plannedDays = CLng(Fix((orders(i).UsageT - remain) / dailyU + 0.0000001))
+                    Else
+                        plannedDays = 0
+                    End If
+                    If plannedDays < 0 Then plannedDays = 0
+                    If plannedDays > totalDays Then plannedDays = totalDays
+                    cursorDate = DateAdd("d", plannedDays, orders(i).StartDate)
+                
+                    ' next unplanned day already beyond window? ? new batch
+                    If cursorDate > validThru Then
+        StartNewBatch batches, nbatches, 0, effCap, windowDays, horizonDays
+                        batchMinStart = 0
+                        firstAllocIdx = nAlloc + 1
+                        capLeft = batches(nbatches).EffCapT
+        ' preset anchor based on cursorDate to avoid empty batch
+        batchMinStart = cursorDate
+        batches(nbatches).anchor = DateAdd("d", -leadDays, batchMinStart)
+        firstAllocIdx = nAlloc + 1
+        windowStart = batches(nbatches).anchor
+        validThru = DateAdd("d", windowDays - 1, windowStart)
+        End If
+                
+                    ' recompute bounds (batch may have changed)
+                    windowStart = batches(nbatches).anchor
+                    validThru = DateAdd("d", windowDays - 1, windowStart)
+                
+                    ' only allocate the overlap days within this window
+                    Dim inDays As Long
+                    inDays = DaysOverlapInclusive(cursorDate, orders(i).EndDate, windowStart, validThru)
+                
+                    Dim maxByWindow As Double
+                    maxByWindow = RoundTo(inDays * dailyU, 4)
+                
+                    ' if nothing fits by window in this batch ? new batch
+                    If maxByWindow <= 0# Then
+                        StartNewBatch batches, nbatches, 0, effCap, windowDays, horizonDays
+                        batchMinStart = 0
+                        firstAllocIdx = nAlloc + 1
+                        capLeft = batches(nbatches).EffCapT
+                    End If
+                
+                    ' tighten cap by window portion
+                    If maxByWindow < remain Then
+                        If capLeft > maxByWindow Then capLeft = maxByWindow
+                    End If
+
+' ------------------------------------------------------------------------------------------
+
+                
+            End If
+' -------------------------------------------------------------------------------
 
             ' ??????
             take = IIf(remain <= capLeft, remain, capLeft)
 
-            ' —— ?????? StartDate ??“???????”??? Anchor
-            If (batchMinStart = 0) Or (orders(i).StartDate < batchMinStart) Then
-                batchMinStart = orders(i).StartDate
-                batches(nbatches).anchor = batchMinStart - leadDays
-
-                ' ????????? allocation(???? Anchor ??)
+            '  ?????? StartDate ???????????? Anchor
+            Dim effStart As Date
+            If plannedDays > 0 Then
+                effStart = cursorDate
+            Else
+                effStart = orders(i).StartDate
+            End If
+            If (batchMinStart = 0) Or (effStart < batchMinStart) Then
+                batchMinStart = effStart
+                batches(nbatches).anchor = DateAdd("d", -leadDays, batchMinStart)
                 Dim k As Long
                 For k = firstAllocIdx To nAlloc
                     alloc(k).anchor = batches(nbatches).anchor
                 Next k
             End If
             ' === ?? alloc() ???????? ===
-            If (Not Not alloc) = 0 Then
-                ' ?????:???????
-                ReDim alloc(1 To 100)
-            ElseIf nAlloc + 1 > UBound(alloc) Then
-                ' ????:??
-                ReDim Preserve alloc(1 To UBound(alloc) + 100)
-            End If
+            If take > 0# Then
+                If (Not Not alloc) = 0 Then
+                    ' ?????:???????
+                    ReDim alloc(1 To 100)
+                ElseIf nAlloc + 1 > UBound(alloc) Then
+                    ' ????:??
+                    ReDim Preserve alloc(1 To UBound(alloc) + 100)
+                End If
 ' === ??????? nAlloc ? 1 ?? ===
 
-            ' ??? allocation(???? Anchor)
-            nAlloc = nAlloc + 1
-            With alloc(nAlloc)
-                .OrderID = orders(i).OrderID
-                .StartDate = orders(i).StartDate
-                .EndDate = orders(i).EndDate
-                .BatchNo = batches(nbatches).BatchNo         ' ??????
-                .anchor = batches(nbatches).anchor
-                .UsageT = RoundTo(take, 4)
-                .horizonDays = horizonDays
-            End With
-            
-            With batches(nbatches)
-                If .FirstStart = 0 Or orders(i).StartDate < .FirstStart Then
-                    .FirstStart = orders(i).StartDate
-                End If
-                If .LastStart = 0 Or orders(i).StartDate > .LastStart Then
-                    .LastStart = orders(i).StartDate
-                End If
-            End With
+                ' ??? allocation(???? Anchor)
+                nAlloc = nAlloc + 1
+                With alloc(nAlloc)
+                    .OrderID = orders(i).OrderID
+                    .StartDate = effStart
+                    .EndDate = orders(i).EndDate
+                    .BatchNo = batches(nbatches).BatchNo         ' ??????
+                    .anchor = batches(nbatches).anchor
+                    .UsageT = RoundTo(take, 4)
+                    .horizonDays = horizonDays
+                End With
 
-            ' ??????
-            batches(nbatches).AllocatedT = RoundTo(batches(nbatches).AllocatedT + take, 4)
+                With batches(nbatches)
+                    If .FirstStart = 0 Or effStart < .FirstStart Then
+                        .FirstStart = effStart
+                    End If
+                    If .LastStart = 0 Or effStart > .LastStart Then
+                        .LastStart = effStart
+                    End If
+                End With
 
-            ' ?????
-            remain = RoundTo(remain - take, 4)
+                ' ??????
+                batches(nbatches).AllocatedT = RoundTo(batches(nbatches).AllocatedT + take, 4)
+
+                ' ?????
+                remain = RoundTo(remain - take, 4)
+            End If
         Loop
+        If nAlloc >= orderStartIdx Then
+            EnforceMinTonsForRange alloc, nAlloc, orderStartIdx, nAlloc, orders(i).fgType
+        End If
 ContinueOrder:
     Next i
-
+    Call RebalanceBatchesByCap(alloc, nAlloc, batches, nbatches, effCap, windowDays)
+    Call ConsolidateAllocAdjacent(alloc, nAlloc)
+    Call RebuildBatchSummaryFromAllocation
     ' ??:?? alloc ??
     If nAlloc > 0 Then ReDim Preserve alloc(1 To nAlloc)
 End Sub
@@ -472,7 +561,7 @@ Public Sub ShowRunSummary( _
 End Sub
 
 
-' —— ??????(? StartDate ??) ——
+'  ??????(? StartDate ??)
 Private Sub SortOrdersByStartDate(ByRef a() As FGOrder, ByVal n&)
     Dim i&, j&
     Dim key As FGOrder
@@ -499,7 +588,7 @@ Private Sub MergeTailIfPossible(ByRef batches() As Batch, ByRef nbatches&, _
     tailT = batches(last).AllocatedT
     headroom = batches(prev).EffCapT - batches(prev).AllocatedT
 
-    ' ??“????”?“??????”????;????????(?????????????)
+    ' ?????????????????;????????(?????????????)
     If tailT > 0# And tailT <= headroom And tailT <= TAIL_EPS Then
         Dim i&, moved#
         For i = 1 To nAlloc
@@ -526,5 +615,290 @@ Private Sub MergeTailIfPossible(ByRef batches() As Batch, ByRef nbatches&, _
         End If
     End If
 End Sub
+
+Public Sub Sanity_Post_AllocWindow()
+    Dim ws As Worksheet: Set ws = GetSheetByNameSafe(SHEET_ALLOC, True)  ' "CompoundingAllocation"
+    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    If lastRow < 2 Then Exit Sub
+
+    Dim r As Long, bad As Long
+    For r = 2 To lastRow
+        Dim startD As Date, validThru As Date, anchor As Date, windowDays As Long
+        startD = NzDate(ws.Cells(r, "B").Value)  ' Start date ??B
+        anchor = NzDate(ws.Cells(r, "E").Value)  ' ?????? Anchor ??E(????????)
+        ' ? Allocation ?????? ValidThru,?? Anchor+WindowDays-1 ??
+        ' ?? WindowDays ??????,???? Window(d) ???? Allocation,???????
+        windowDays = ReadWindowDays()
+        validThru = DateAdd("d", windowDays - 1, anchor)
+
+        If startD > validThru Then bad = bad + 1
+    Next
+
+    If bad > 0 Then
+        Err.Raise 1021, , bad & " allocation row(s) violate batch window (Start date > Valid thru)."
+    End If
+End Sub
+
+' ?????? alloc() ???? [iStart..iEnd] ?“????”??:
+' ???????,???????(??????);???????,???????
+Public Sub EnforceMinTonsForRange(ByRef alloc() As tAlloc, ByRef nAlloc As Long, _
+                                  ByVal iStart As Long, ByVal iEnd As Long, _
+                                  ByVal fgType As String)
+    Dim minT As Double, i As Long, j As Long
+    minT = ReadMinTonsByFGType(fgType)
+    If minT <= 0# Then Exit Sub
+    If iStart < 1 Or iEnd < iStart Or iEnd > nAlloc Then Exit Sub
+
+    i = iStart
+    Do While i <= iEnd
+        If alloc(i).UsageT >= minT Then
+            i = i + 1
+        Else
+            If i < iEnd Then
+                ' ?????(??)
+                alloc(i + 1).UsageT = RoundTo(alloc(i + 1).UsageT + alloc(i).UsageT, 4)
+                ' ???? i:????
+                For j = i To nAlloc - 1
+                    alloc(j) = alloc(j + 1)
+                Next j
+                nAlloc = nAlloc - 1
+                iEnd = iEnd - 1
+                ' ?? i ??,??????? i ????
+            Else
+                ' ??????:?????
+                If i > iStart Then
+                    alloc(i - 1).UsageT = RoundTo(alloc(i - 1).UsageT + alloc(i).UsageT, 4)
+                    For j = i To nAlloc - 1
+                        alloc(j) = alloc(j + 1)
+                    Next j
+                    nAlloc = nAlloc - 1
+                    iEnd = iEnd - 1
+                    i = i - 1            ' ????????????
+                Else
+                    ' ??????????:??(????)
+                    Exit Do
+                End If
+            End If
+        End If
+    Loop
+End Sub
+
+Public Sub RebalanceBatchesByCap( _
+    ByRef alloc() As tAlloc, ByVal nAlloc As Long, _
+    ByRef batches() As tBatch, ByRef nbatches As Long, _
+    ByVal effCap As Double, ByVal windowDays As Long)
+
+    Dim b As Long, k As Long, idx As Long
+    Dim sumT As Double
+
+    If nAlloc <= 0 Or nbatches <= 0 Then Exit Sub
+
+    For b = 1 To nbatches
+        sumT = 0#
+        For k = 1 To nAlloc
+            If alloc(k).BatchNo = b Then
+                sumT = RoundTo(sumT + alloc(k).UsageT, 4)
+            End If
+        Next k
+
+        Do While sumT > effCap + 0.0001
+            idx = 0
+            For k = nAlloc To 1 Step -1
+                If alloc(k).BatchNo = b Then
+                    idx = k: Exit For
+                End If
+            Next k
+            If idx = 0 Then Exit Do
+
+            If b = nbatches Then
+                nbatches = nbatches + 1
+                batches(nbatches).BatchNo = nbatches
+                batches(nbatches).anchor = DateAdd("d", windowDays, batches(nbatches - 1).anchor)
+            End If
+
+            ' ????????;ValidThru ??????
+            alloc(idx).BatchNo = b + 1
+            alloc(idx).anchor = batches(b + 1).anchor
+
+            sumT = RoundTo(sumT - alloc(idx).UsageT, 4)
+        Loop
+    Next b
+End Sub
+
+' ? alloc() ?“??????”????????:
+' ? = OrderID + BatchNo + Anchor + StartDate + EndDate
+Public Sub ConsolidateAllocAdjacent(ByRef alloc() As tAlloc, ByRef nAlloc As Long)
+    Dim i As Long, j As Long
+    If nAlloc <= 1 Then Exit Sub
+
+    i = 2
+    Do While i <= nAlloc
+        If alloc(i).BatchNo = alloc(i - 1).BatchNo _
+           And alloc(i).OrderID = alloc(i - 1).OrderID _
+           And alloc(i).anchor = alloc(i - 1).anchor _
+           And alloc(i).StartDate = alloc(i - 1).StartDate _
+           And alloc(i).EndDate = alloc(i - 1).EndDate Then
+
+            ' ????
+            alloc(i - 1).UsageT = RoundTo(alloc(i - 1).UsageT + alloc(i).UsageT, 4)
+            ' ??? i ?:????
+            For j = i To nAlloc - 1
+                alloc(j) = alloc(j + 1)
+            Next j
+            nAlloc = nAlloc - 1
+            ' ????????(??? i ???)
+        Else
+            i = i + 1
+        End If
+    Loop
+End Sub
+
+' ===============================================================
+' Rebuilds CompoundingBatchSummary *from CompoundingAllocation*.
+' ÒÀÀµ¼«ÉÙ£ºÖ±½Ó´Ó SHEET_CFG(H¼ü/IÖµ) ¶ÁÈ¡ Useable vol / Batch window / Horizon days¡£
+' ÔÚÍê³É£º×îÐ¡¶ÖÎ»ºÏ²¢ ¡ú ÈÝÁ¿»ØÊÕ ¡ú ÏàÁÚºÏ²¢ ¡ú Ð´Íê Allocation ºóµ÷ÓÃ¡£
+' ½öÖØÐ´ Summary ±í£¬²»¸Ä Allocation¡£
+' ÐèÒª£ºGetSheetByNameSafe, FindCol, SHEET_ALLOC, SHEET_SUM, SHEET_CFG
+' ===============================================================
+Public Sub RebuildBatchSummaryFromAllocation()
+    Dim wsA As Worksheet, wsS As Worksheet, wsCfg As Worksheet
+    Dim lastRow As Long, r As Long
+    Dim cStart As Long, cEnd As Long, cBatch As Long, cAnchor As Long, cUsage As Long
+    Dim maxBatch As Long, b As Long
+    Dim effCap As Double, windowDays As Long, horizonDays As Long
+    
+    On Error GoTo EH
+    
+    Set wsA = GetSheetByNameSafe(SHEET_ALLOC, True)
+    Set wsS = GetSheetByNameSafe(SHEET_SUM, True)
+    Set wsCfg = GetSheetByNameSafe(SHEET_CFG, True)
+    
+    ' Allocation ±ØÒªÁÐ¶¨Î»
+    cStart = FindCol(wsA, Array("Start date", "Startdate", "Start"))
+    cEnd = FindCol(wsA, Array("End date", "Enddate", "End"))
+    cBatch = FindCol(wsA, Array("Batch#", "Batch No", "BatchNo"))
+    cAnchor = FindCol(wsA, Array("Anchor"))
+    cUsage = FindCol(wsA, Array("usage (t)", "UsageT", "usage_t"))
+    
+    If cBatch = 0 Or cUsage = 0 Then Err.Raise 513, , "Allocation sheet missing required columns (Batch#/usage)."
+    
+    lastRow = wsA.Cells(wsA.Rows.Count, cBatch).End(xlUp).Row
+    
+    ' Ð´±íÍ·
+    wsS.Cells.ClearContents
+    wsS.Range("A1:J1").Value = Array("Batch#", "Anchor", "Valid thru", "First start", "Last start", _
+                                     "Allocated (t)", "EffCap (t)", "Remaining (t)", "Window(d)", "Horizon(d)")
+    If lastRow < 2 Then Exit Sub
+    
+    ' Ö±½Ó´ÓÅäÖÃ±í¶ÁÈ¡²ÎÊý£¨H¼ü/IÖµ£©
+    effCap = SafeReadCfgDouble(wsCfg, "Useable vol", 37.5)
+    windowDays = CLng(SafeReadCfgDouble(wsCfg, "Batch window", 21))
+    horizonDays = CLng(SafeReadCfgDouble(wsCfg, "Horizon days", 42))
+    
+    ' ×î´óÅúºÅ
+    maxBatch = 0
+    For r = 2 To lastRow
+        If Len(wsA.Cells(r, cBatch).Value) > 0 Then
+            b = CLng(wsA.Cells(r, cBatch).Value)
+            If b > maxBatch Then maxBatch = b
+        End If
+    Next r
+    If maxBatch = 0 Then Exit Sub
+    
+    ' ÀÛ¼ÓÆ÷
+    Dim sumT() As Double, minStart() As Date, maxStart() As Date, anchorArr() As Date, hasBatch() As Boolean
+    ReDim sumT(1 To maxBatch)
+    ReDim minStart(1 To maxBatch)
+    ReDim maxStart(1 To maxBatch)
+    ReDim anchorArr(1 To maxBatch)
+    ReDim hasBatch(1 To maxBatch)
+    
+    ' °´Åú¾ÛºÏ
+    Dim curB As Long, u As Double, s As Date, anc As Date, sv As Variant, av As Variant
+    For r = 2 To lastRow
+        If Len(wsA.Cells(r, cBatch).Value) > 0 Then
+            curB = CLng(wsA.Cells(r, cBatch).Value)
+            If curB >= 1 And curB <= maxBatch Then
+                u = ToDouble(wsA.Cells(r, cUsage).Value, 0#)
+                sumT(curB) = Round4(sumT(curB) + u)
+                
+                sv = wsA.Cells(r, cStart).Value
+                If IsDate(sv) Then
+                    s = CDate(sv)
+                    If minStart(curB) = 0 Or s < minStart(curB) Then minStart(curB) = s
+                    If maxStart(curB) = 0 Or s > maxStart(curB) Then maxStart(curB) = s
+                End If
+                
+                av = wsA.Cells(r, cAnchor).Value
+                If IsDate(av) Then anchorArr(curB) = CDate(av)
+                
+                hasBatch(curB) = True
+            End If
+        End If
+    Next r
+    
+    ' Êä³ö Summary
+    Dim outRow As Long: outRow = 2
+    For b = 1 To maxBatch
+        If hasBatch(b) Then
+            wsS.Cells(outRow, 1).Value = b
+            
+            ' Anchor£ºÓÅÏÈÓÃ¾ÛºÏµ½µÄ Anchor£»ÈôÈ±Ê§£¬ÓÃÉÏÒ»Åú Anchor + windowDays ÍÆµ¼
+            If anchorArr(b) = 0 And outRow > 2 Then
+                anchorArr(b) = DateAdd("d", windowDays, wsS.Cells(outRow - 1, 2).Value)
+            End If
+            wsS.Cells(outRow, 2).Value = anchorArr(b)
+            If anchorArr(b) <> 0 Then
+                wsS.Cells(outRow, 3).Value = DateAdd("d", windowDays - 1, anchorArr(b))
+            End If
+            
+            wsS.Cells(outRow, 4).Value = IIf(minStart(b) = 0, Empty, minStart(b))
+            wsS.Cells(outRow, 5).Value = IIf(maxStart(b) = 0, Empty, maxStart(b))
+            
+            ' ¹Ø¼üÐÞ¸´£º°´ Allocation ÕæÖµ¼ÆËã
+            wsS.Cells(outRow, 6).Value = Round3(sumT(b))                             ' Allocated (t)
+            wsS.Cells(outRow, 7).Value = effCap                                      ' EffCap (t)
+            wsS.Cells(outRow, 8).Value = Round3(Application.Max(0, effCap - sumT(b))) ' Remaining (t)
+            
+            wsS.Cells(outRow, 9).Value = windowDays
+            wsS.Cells(outRow, 10).Value = horizonDays
+            
+            outRow = outRow + 1
+        End If
+    Next b
+    Exit Sub
+EH:
+    MsgBox "RebuildBatchSummaryFromAllocation failed: " & Err.Description, vbExclamation
+End Sub
+
+' ======= ±¾µØÐ¡¹¤¾ß£¨±ÜÃâÍâ²¿ÒÀÀµ£© =======
+Private Function SafeReadCfgDouble(wsCfg As Worksheet, keyText As String, defaultVal As Double) As Double
+    Dim lastRow As Long, r As Long, v As Variant
+    lastRow = wsCfg.Cells(wsCfg.Rows.Count, "H").End(xlUp).Row
+    For r = 1 To lastRow
+        If Trim$(CStr(wsCfg.Cells(r, "H").Value)) = keyText Then
+            v = wsCfg.Cells(r, "I").Value
+            SafeReadCfgDouble = ToDouble(v, defaultVal)
+            Exit Function
+        End If
+    Next r
+    SafeReadCfgDouble = defaultVal
+End Function
+
+Private Function ToDouble(v As Variant, defaultVal As Double) As Double
+    If IsNumeric(v) Then
+        ToDouble = CDbl(v)
+    Else
+        ToDouble = defaultVal
+    End If
+End Function
+
+Private Function Round4(x As Double) As Double
+    Round4 = WorksheetFunction.Round(x, 4)
+End Function
+
+Private Function Round3(x As Double) As Double
+    Round3 = WorksheetFunction.Round(x, 3)
+End Function
 
 

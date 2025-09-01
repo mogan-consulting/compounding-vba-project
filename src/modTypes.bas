@@ -2,14 +2,16 @@ Attribute VB_Name = "modTypes"
 Option Explicit
 
 ' 单条来源订单（已换算 usage_t）
+
 Public Type FGOrder
     Company As String
     Product As String
     OrderID As String
     StartDate As Date
     EndDate As Date
-    PlanQty As Double  ' 原始 plan order qty
-    UsageT As Double   ' 换算后的吨数
+    PlanQty As Double
+    UsageT  As Double
+    fgType  As String   ' ? ??:????????
 End Type
 
 ' 批（按每周六锚点生成）

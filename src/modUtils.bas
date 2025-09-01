@@ -207,3 +207,58 @@ Public Function Max3(ByVal a As Long, ByVal b As Long, ByVal c As Long) As Long
     Max3 = Application.Max(a, b, c)
 End Function
 
+' === NEW: inclusive overlap of two [start, end] date ranges, returns number of days (>=0) ===
+Public Function DaysOverlapInclusive(ByVal aStart As Date, ByVal aEnd As Date, _
+                                     ByVal bStart As Date, ByVal bEnd As Date) As Long
+    If aEnd < aStart Then
+        DaysOverlapInclusive = 0
+        Exit Function
+    End If
+    If bEnd < bStart Then
+        DaysOverlapInclusive = 0
+        Exit Function
+    End If
+    Dim s As Date, e As Date
+    If aStart > bStart Then s = aStart Else s = bStart
+    If aEnd < bEnd Then e = aEnd Else e = bEnd
+    If e < s Then
+        DaysOverlapInclusive = 0
+    Else
+        DaysOverlapInclusive = DateDiff("d", s, e) + 1
+    End If
+End Function
+
+' ?????H??“?”,?????? ????? ??
+' ?:offsetCols=+2 ???H??J
+Public Function ReadNamedValueAtOffset(ByVal sheetName As String, _
+                                       ByVal keyText As String, _
+                                       ByVal offsetCols As Long, _
+                                       Optional ByVal defaultValue As Variant) As Variant
+    Dim ws As Worksheet, lastRow&, r&
+    Set ws = GetSheetByNameSafe(sheetName, True)
+    lastRow = ws.Cells(ws.Rows.Count, "H").End(xlUp).Row
+    For r = 1 To lastRow
+        If Trim$(CStr(ws.Cells(r, "H").Value)) = keyText Then
+            ReadNamedValueAtOffset = ws.Cells(r, "H").Offset(0, offsetCols).Value
+            Exit Function
+        End If
+    Next r
+    ReadNamedValueAtOffset = defaultValue
+End Function
+
+' ??“??FG???????”——??????J?(H????2?)
+Public Function ReadMinTonsByFGType(ByVal fgType As String) As Double
+    Dim key$
+    Select Case LCase$(Trim$(fgType))
+        Case "10ml": key = KEY_MIN_QTY_10ML
+        Case "5ml":  key = KEY_MIN_QTY_5ML
+        Case "3ml":  key = KEY_MIN_QTY_3ML
+        Case Else
+            ' ????????
+            ReadMinTonsByFGType = 0#
+            Exit Function
+    End Select
+    ' H?J = ?? +2
+    ReadMinTonsByFGType = CDbl(NzDouble(ReadNamedValueAtOffset(SHEET_CFG, key, 2, 0#)))
+End Function
+

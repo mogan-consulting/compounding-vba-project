@@ -359,6 +359,8 @@ Public Sub AllocateOrdersAsNeeded( _
         batchMinStart = 0
         firstAllocIdx = nAlloc + 1
     End If
+    ' ????????(?? SAP ???????????)
+    If nOrders > 1 Then SortOrdersByStartThenEnd orders, nOrders
 
     For i = 1 To nOrders
         remain = RoundTo(orders(i).UsageT, 4)
@@ -814,7 +816,7 @@ Public Sub RebuildBatchSummaryFromAllocation()
     ReDim hasBatch(1 To maxBatch)
     
     ' °´Åú¾ÛºÏ
-    Dim curB As Long, u As Double, s As Date, anc As Date, sv As Variant, av As Variant
+    Dim curB As Long, u As Double, S As Date, anc As Date, sv As Variant, av As Variant
     For r = 2 To lastRow
         If Len(wsA.Cells(r, cBatch).Value) > 0 Then
             curB = CLng(wsA.Cells(r, cBatch).Value)
@@ -824,9 +826,9 @@ Public Sub RebuildBatchSummaryFromAllocation()
                 
                 sv = wsA.Cells(r, cStart).Value
                 If IsDate(sv) Then
-                    s = CDate(sv)
-                    If minStart(curB) = 0 Or s < minStart(curB) Then minStart(curB) = s
-                    If maxStart(curB) = 0 Or s > maxStart(curB) Then maxStart(curB) = s
+                    S = CDate(sv)
+                    If minStart(curB) = 0 Or S < minStart(curB) Then minStart(curB) = S
+                    If maxStart(curB) = 0 Or S > maxStart(curB) Then maxStart(curB) = S
                 End If
                 
                 av = wsA.Cells(r, cAnchor).Value
@@ -901,4 +903,26 @@ Private Function Round3(x As Double) As Double
     Round3 = WorksheetFunction.Round(x, 3)
 End Function
 
+' ???????(???????????)????????
+Public Sub SortOrdersByStartThenEnd(ByRef orders() As FGOrder, ByVal nOrders As Long)
+    Dim i As Long, j As Long
+    Dim tmp As FGOrder
+    Dim s1 As Date, s2 As Date, e1 As Date, e2 As Date
+
+    If nOrders <= 1 Then Exit Sub
+
+    ' ?? O(n^2) ??;??????,????????
+    For i = 1 To nOrders - 1
+        For j = i + 1 To nOrders
+            s1 = orders(i).StartDate: e1 = orders(i).EndDate
+            s2 = orders(j).StartDate: e2 = orders(j).EndDate
+
+            If (s1 > s2) Or (s1 = s2 And e1 > e2) Then
+                tmp = orders(i)
+                orders(i) = orders(j)
+                orders(j) = tmp
+            End If
+        Next j
+    Next i
+End Sub
 

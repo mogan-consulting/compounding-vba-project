@@ -60,13 +60,13 @@ Public Function NzDate(ByVal v As Variant, Optional ByVal def As Date = 0) As Da
     If IsDate(v) Then NzDate = CDate(v): Exit Function
     On Error GoTo 0
 
-    Dim s As String, a() As String
-    s = Trim(CStr(v))
-    If Len(s) = 0 Then NzDate = def: Exit Function
+    Dim S As String, a() As String
+    S = Trim(CStr(v))
+    If Len(S) = 0 Then NzDate = def: Exit Function
 
     ' ?????
-    s = Replace(Replace(s, "/", "-"), ".", "-")
-    a = Split(s, "-")
+    S = Replace(Replace(S, "/", "-"), ".", "-")
+    a = Split(S, "-")
     If UBound(a) = 2 Then
         Dim y&, m&, d&
         If Len(a(0)) = 4 Then               ' yyyy-mm-dd
@@ -89,18 +89,18 @@ Public Function NzDouble(ByVal v As Variant, Optional ByVal def As Double = 0#) 
     ' ??:??????????????????????(123) ??
     If IsNumeric(v) Then NzDouble = CDbl(v): Exit Function
 
-    Dim s As String
-    s = Trim$(CStr(v))
-    If Len(s) = 0 Then NzDouble = def: Exit Function
+    Dim S As String
+    S = Trim$(CStr(v))
+    If Len(S) = 0 Then NzDouble = def: Exit Function
 
-    s = WorksheetFunction.Clean(s)
-    s = Replace$(s, Chr(160), " ")  ' NBSP
-    s = Replace$(s, " ", "")
-    s = Replace$(s, ",", "")
-    If Left$(s, 1) = "(" And Right$(s, 1) = ")" Then s = "-" & Mid$(s, 2, Len(s) - 2)
+    S = WorksheetFunction.Clean(S)
+    S = Replace$(S, Chr(160), " ")  ' NBSP
+    S = Replace$(S, " ", "")
+    S = Replace$(S, ",", "")
+    If Left$(S, 1) = "(" And Right$(S, 1) = ")" Then S = "-" & Mid$(S, 2, Len(S) - 2)
 
     On Error Resume Next
-    NzDouble = CDbl(s)
+    NzDouble = CDbl(S)
     If Err.Number <> 0 Then NzDouble = def: Err.Clear
     On Error GoTo 0
 End Function
@@ -142,9 +142,9 @@ Public Function AlignToAnchorWeekday(ByVal d As Date, ByVal anchorWd As Long) As
     AlignToAnchorWeekday = d + ((anchorWd - wd + 7) Mod 7)
 End Function
 
-Public Function FactorFromFGType(ByVal s As String) As Double
-    s = LCase$(Trim$(CStr(s)))
-    Select Case s
+Public Function FactorFromFGType(ByVal S As String) As Double
+    S = LCase$(Trim$(CStr(S)))
+    Select Case S
         Case "10ml", "10 ml": FactorFromFGType = 10.4
         Case "5ml", "5 ml":   FactorFromFGType = 5.4
         Case "3ml", "3 ml":   FactorFromFGType = 3.4
@@ -218,13 +218,13 @@ Public Function DaysOverlapInclusive(ByVal aStart As Date, ByVal aEnd As Date, _
         DaysOverlapInclusive = 0
         Exit Function
     End If
-    Dim s As Date, e As Date
-    If aStart > bStart Then s = aStart Else s = bStart
+    Dim S As Date, e As Date
+    If aStart > bStart Then S = aStart Else S = bStart
     If aEnd < bEnd Then e = aEnd Else e = bEnd
-    If e < s Then
+    If e < S Then
         DaysOverlapInclusive = 0
     Else
-        DaysOverlapInclusive = DateDiff("d", s, e) + 1
+        DaysOverlapInclusive = DateDiff("d", S, e) + 1
     End If
 End Function
 

@@ -67,9 +67,9 @@ End Function
 
 Public Function ReadSourceSheetName() As String
     On Error Resume Next
-    Dim s$: s = Trim$(CStr(ThisWorkbook.Worksheets(SHEET_CFG).Range(CELL_SRC_SHEET).Value))
-    If Len(s) = 0 Then s = SHEET_SRC   ' ?????????
-    ReadSourceSheetName = s
+    Dim S$: S = Trim$(CStr(ThisWorkbook.Worksheets(SHEET_CFG).Range(CELL_SRC_SHEET).Value))
+    If Len(S) = 0 Then S = SHEET_SRC   ' ?????????
+    ReadSourceSheetName = S
 End Function
 
 

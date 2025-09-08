@@ -169,7 +169,7 @@ Private Sub ReadOrders(ByVal ws As Worksheet, _
             Dim oid$
             If cOrderID > 0 Then oid = CStr(ws.Cells(r, cOrderID).Value)
             If Len(Trim$(oid)) = 0 Then oid = "ROW-" & CStr(r)
-            .OrderID = oid
+            .orderId = oid
         
             .StartDate = dStart
             .EndDate = dEnd
@@ -265,42 +265,176 @@ Public Sub ValidateConsistency( _
     Next i
 End Sub
 
-'  1Ï¸Ò³CompoundingAllocation
-'  Anchor  Valid thru = Anchor + Window(d) - 1
-'======================
 Public Sub WriteAllocationSheet(ByRef alloc() As tAlloc, ByVal nAlloc As Long)
     Dim ws As Worksheet
     Dim i As Long, windowDays As Long
     Dim a() As Variant
 
-    windowDays = ReadWindowDays()                      '  21
-    Set ws = GetSheetByNameSafe(SHEET_ALLOC, True)     ' "CompoundingAllocation"
+    windowDays = ReadWindowDays()                          ' 21(?????)
+    Set ws = GetSheetByNameSafe(SHEET_ALLOC, True)         ' "CompoundingAllocation"
 
     ws.Cells.Clear
-    ws.Range("A1").Resize(1, 8).Value = Array( _
-        "Order ID", "Start date", "End date", "Batch#", "Anchor", "Valid thru", "usage (t)", "Horizon(d)")
+    ' ??? 8 ??? 10 ?,?? I/J
+    ws.Range("A1").Resize(1, 10).Value = Array( _
+        "Order ID", "Start date", "End date", "Batch#", "Anchor", "Valid thru", _
+        "usage (t)", "Horizon(d)", "FG type", "plan order qty")
 
     If nAlloc <= 0 Then Exit Sub
 
-    ReDim a(1 To nAlloc, 1 To 8)
+    ' ????:8 -> 10 ?(??????)
+    ReDim a(1 To nAlloc, 1 To 10)
+
+    '—— ?????????(??????/??)——
+    Static initDone As Boolean
+    '—— ?????????(? SRC Sheet ?????????)——
+    Static wsSrc As Worksheet, rngOrder As Range
+    Static cOrder As Long, cFG As Long, cQty As Long, cUsage As Long
+    Static lastSrcName As String
+    Dim wsCur As Worksheet, lr As Long
+    
+    Set wsCur = ResolveRunSheet()                    ' ?? CompoundingTab ? SRC Sheet
+    
+    ' ???? ? ???? ? ?????
+    If (wsSrc Is Nothing) Or (wsCur Is Nothing) Or (wsCur.name <> lastSrcName) Then
+        Set wsSrc = wsCur
+        lastSrcName = ""
+        Set rngOrder = Nothing
+        cOrder = 0: cFG = 0: cQty = 0: cUsage = 0
+    
+        If Not wsSrc Is Nothing Then
+            lastSrcName = wsSrc.name
+    
+            ' ????????(?????)
+            cOrder = FindCol(wsSrc, Array("Order ID"))
+            cFG = FindCol(wsSrc, Array("FG type"))
+            cQty = FindCol(wsSrc, Array("plan order qty"))
+            cUsage = FindCol(wsSrc, Array("usage (t)"))
+    
+            ' ????(? Compounding_* ???:D/E/G)
+            If cQty = 0 Then cQty = 4          ' D
+            If cFG = 0 Then cFG = 5            ' E
+            If cUsage = 0 Then cUsage = 7      ' G
+    
+            ' ??????? A?(????,?? 9 ???)
+            If cOrder > 0 Then
+                On Error Resume Next
+                lr = wsSrc.Cells(wsSrc.Rows.Count, cOrder).End(xlUp).Row
+                On Error GoTo 0
+                If lr >= 2 Then
+                    Set rngOrder = wsSrc.Range(wsSrc.Cells(2, cOrder), wsSrc.Cells(lr, cOrder))
+                End If
+            End If
+        End If
+    End If
+
+    If Not initDone Then
+        Set wsSrc = ResolveRunSheet()                      ' ????:???CompoundingTab? SRC Sheet
+
+        If Not wsSrc Is Nothing Then
+            ' ? ???????(??????,????)
+            cOrder = FindCol(wsSrc, Array("Order ID"))
+            cFG = FindCol(wsSrc, Array("FG type"))
+            cQty = FindCol(wsSrc, Array("plan order qty"))
+            cUsage = FindCol(wsSrc, Array("usage (t)"))      ' ? ??:?? usage(t) ?
+            ' ????(??? Compounding_Test_3:D=4, E=5)
+            If cQty = 0 Then cQty = 4
+            If cFG = 0 Then cFG = 5
+            If cUsage = 0 Then cUsage = 7    ' G ?
+            ' ?????? rngOrder(cOrder=0 ???,?? 9 ??)
+            If cOrder > 0 Then
+                On Error Resume Next
+                lr = wsSrc.Cells(wsSrc.Rows.Count, cOrder).End(xlUp).Row
+                On Error GoTo 0
+                If lr >= 2 Then
+                    Set rngOrder = wsSrc.Range(wsSrc.Cells(2, cOrder), wsSrc.Cells(lr, cOrder))
+                Else
+                    Set rngOrder = Nothing
+                End If
+            Else
+                Set rngOrder = Nothing
+            End If
+        End If
+        initDone = True
+    End If
+
+    '—— ????(??????)——
+    Dim posVar As Variant, key As Variant, rFound As Long
     For i = 1 To nAlloc
-        a(i, 1) = alloc(i).OrderID
+        a(i, 1) = alloc(i).orderId
         a(i, 2) = alloc(i).StartDate
         a(i, 3) = alloc(i).EndDate
         a(i, 4) = alloc(i).BatchNo
         a(i, 5) = alloc(i).anchor
-        a(i, 6) = DateAdd("d", windowDays - 1, alloc(i).anchor) ' Ð§Ú£Ëµã£©
+        a(i, 6) = DateAdd("d", windowDays - 1, alloc(i).anchor)   ' Valid thru
         a(i, 7) = RoundTo(alloc(i).UsageT, 3)
         a(i, 8) = alloc(i).horizonDays
+
+        '—— ??:I/J ??(? Order ID ???????)——
+        a(i, 9) = vbNullString
+        a(i, 10) = vbNullString
+
+        If Not wsSrc Is Nothing Then
+            ' ????????? rngOrder,???????(????????)
+            If rngOrder Is Nothing And cOrder > 0 Then
+                On Error Resume Next
+                lr = wsSrc.Cells(wsSrc.Rows.Count, cOrder).End(xlUp).Row
+                On Error GoTo 0
+                If lr >= 2 Then
+                    Set rngOrder = wsSrc.Range(wsSrc.Cells(2, cOrder), wsSrc.Cells(lr, cOrder))
+                End If
+            End If
+
+            If Not rngOrder Is Nothing Then
+            ' ?????,?????,?? "1" vs 1
+            posVar = Application.Match(CDbl(alloc(i).orderId), rngOrder, 0)
+            If IsError(posVar) Or IsEmpty(posVar) Then
+                posVar = Application.Match(CStr(alloc(i).orderId), rngOrder, 0)
+            End If
+        
+            If Not IsError(posVar) And Len(posVar) > 0 Then
+                rFound = 1 + CLng(posVar)
+        
+                ' I ?:???? FG type
+                a(i, 9) = wsSrc.Cells(rFound, cFG).Value
+        
+                ' J ?:???? = ???? × (??usage / ??usage) ,? RoundUp ???
+                Dim planTotal As Double, usageTotal As Double, qtySlice As Double, v As Variant
+        
+                v = wsSrc.Cells(rFound, cQty).Value
+                If IsNumeric(v) Then planTotal = CDbl(v) Else planTotal = 0
+        
+                v = wsSrc.Cells(rFound, cUsage).Value
+                If IsNumeric(v) Then usageTotal = CDbl(v) Else usageTotal = 0
+        
+                If usageTotal > 0 Then
+                    qtySlice = planTotal * (alloc(i).UsageT / usageTotal)
+                Else
+                    qtySlice = planTotal   ' ??
+                End If
+        
+                ' ?????:?? RoundUp ???(???10/100,??????)
+                a(i, 10) = Application.WorksheetFunction.RoundUp(qtySlice, -1)
+            End If
+End If
+
+        End If
+        '—— end I/J ——
     Next i
 
-    ws.Range("A2").Resize(nAlloc, 8).Value = a
+    ' ????? 10 ?
+    ws.Range("A2").Resize(nAlloc, 10).Value = a
 
-    ws.Columns("B:C").NumberFormat = "yyyy-mm-dd"      ' Start / End
-    ws.Columns("E:F").NumberFormat = "yyyy-mm-dd"      ' Anchor / Valid thru
-    ws.Columns("G:G").NumberFormat = "0.000"           ' usage (t)
+    ' ???? + ?? J ???
+    ws.Columns("B:C").NumberFormat = "yyyy-mm-dd"    ' Start / End
+    ws.Columns("E:F").NumberFormat = "yyyy-mm-dd"    ' Anchor / Valid thru
+    ws.Columns("G:G").NumberFormat = "0.000"         ' usage (t)
+    ws.Columns("J:J").NumberFormat = "#,##0"         ' plan order qty
     ws.Columns.AutoFit
 End Sub
+
+
+
+
 Public Sub WriteBatchSummarySheet(ByRef batches() As tBatch, ByVal nbatches As Long)
     Dim ws As Worksheet
     Dim i As Long
@@ -475,7 +609,7 @@ Public Sub AllocateOrdersAsNeeded( _
                 ' ??? allocation(???? Anchor)
                 nAlloc = nAlloc + 1
                 With alloc(nAlloc)
-                    .OrderID = orders(i).OrderID
+                    .orderId = orders(i).orderId
                     .StartDate = effStart
                     .EndDate = orders(i).EndDate
                     .BatchNo = batches(nbatches).BatchNo         ' ??????
@@ -736,7 +870,7 @@ Public Sub ConsolidateAllocAdjacent(ByRef alloc() As tAlloc, ByRef nAlloc As Lon
     i = 2
     Do While i <= nAlloc
         If alloc(i).BatchNo = alloc(i - 1).BatchNo _
-           And alloc(i).OrderID = alloc(i - 1).OrderID _
+           And alloc(i).orderId = alloc(i - 1).orderId _
            And alloc(i).anchor = alloc(i - 1).anchor _
            And alloc(i).StartDate = alloc(i - 1).StartDate _
            And alloc(i).EndDate = alloc(i - 1).EndDate Then
@@ -816,7 +950,7 @@ Public Sub RebuildBatchSummaryFromAllocation()
     ReDim hasBatch(1 To maxBatch)
     
     ' °´Åú¾ÛºÏ
-    Dim curB As Long, u As Double, S As Date, anc As Date, sv As Variant, av As Variant
+    Dim curB As Long, u As Double, s As Date, anc As Date, sv As Variant, av As Variant
     For r = 2 To lastRow
         If Len(wsA.Cells(r, cBatch).Value) > 0 Then
             curB = CLng(wsA.Cells(r, cBatch).Value)
@@ -826,9 +960,9 @@ Public Sub RebuildBatchSummaryFromAllocation()
                 
                 sv = wsA.Cells(r, cStart).Value
                 If IsDate(sv) Then
-                    S = CDate(sv)
-                    If minStart(curB) = 0 Or S < minStart(curB) Then minStart(curB) = S
-                    If maxStart(curB) = 0 Or S > maxStart(curB) Then maxStart(curB) = S
+                    s = CDate(sv)
+                    If minStart(curB) = 0 Or s < minStart(curB) Then minStart(curB) = s
+                    If maxStart(curB) = 0 Or s > maxStart(curB) Then maxStart(curB) = s
                 End If
                 
                 av = wsA.Cells(r, cAnchor).Value
@@ -924,5 +1058,75 @@ Public Sub SortOrdersByStartThenEnd(ByRef orders() As FGOrder, ByVal nOrders As 
             End If
         Next j
     Next i
+End Sub
+
+'??????(CompoundingTab)? SRC Sheet ????;???????????
+Private Function ResolveRunSheet() As Worksheet
+    Dim wb As Workbook: Set wb = ThisWorkbook
+    Dim ws As Worksheet
+    Dim srcName As String
+
+    ' 1) ?????? SRC Sheet(H???,I???)
+    srcName = ReadCfgKey_Simple("CompoundingTab", "SRC Sheet")
+    If Len(Trim$(srcName)) > 0 Then
+        On Error Resume Next
+        Set ws = wb.Worksheets(srcName)
+        On Error GoTo 0
+        If Not ws Is Nothing Then
+            If FindCol(ws, Array("Order ID")) > 0 Then
+                Set ResolveRunSheet = ws
+                Exit Function
+            End If
+        End If
+    End If
+
+    ' 2) ??:????????????“Order ID”??
+    Dim candidates As Variant, i As Long
+    candidates = Array("Compounding_Test_3", "Compounding_Test_2", "Compounding_Test_1", _
+                       "Compounding_ECC extraction", "Extract")
+
+    For i = LBound(candidates) To UBound(candidates)
+        On Error Resume Next
+        Set ws = wb.Worksheets(CStr(candidates(i)))
+        On Error GoTo 0
+        If Not ws Is Nothing Then
+            If FindCol(ws, Array("Order ID")) > 0 Then
+                Set ResolveRunSheet = ws
+                Exit Function
+            End If
+            Set ws = Nothing
+        End If
+    Next i
+
+    ' 3) ????
+    Set ResolveRunSheet = Nothing
+End Function
+
+'????(CompoundingTab)???????:H?=?,I?=?
+Private Function ReadCfgKey_Simple(ByVal cfgSheetName As String, ByVal keyText As String) As String
+    Dim ws As Worksheet, lastRow As Long, r As Range
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(cfgSheetName)
+    On Error GoTo 0
+    If ws Is Nothing Then Exit Function
+
+    lastRow = ws.Cells(ws.Rows.Count, "H").End(xlUp).Row
+    If lastRow < 1 Then Exit Function
+
+    Set r = ws.Range("H1:H" & lastRow).Find(What:=keyText, LookAt:=xlWhole, MatchCase:=False)
+    If Not r Is Nothing Then
+        ReadCfgKey_Simple = CStr(ws.Cells(r.Row, "I").Value)
+    End If
+End Function
+
+
+Public Sub TestResolve()
+    Dim t As Worksheet
+    Set t = ResolveRunSheet()
+    If t Is Nothing Then
+        MsgBox "Nothing found"
+    Else
+        MsgBox "ResolveRunSheet got: " & t.name
+    End If
 End Sub
 

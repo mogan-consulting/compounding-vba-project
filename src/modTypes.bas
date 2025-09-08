@@ -6,7 +6,7 @@ Option Explicit
 Public Type FGOrder
     Company As String
     Product As String
-    OrderID As String
+    orderId As String
     StartDate As Date
     EndDate As Date
     PlanQty As Double
@@ -30,7 +30,7 @@ End Type
 Public Type AllocationLine
     Company As String
     Product As String
-    OrderID As String
+    orderId As String
     StartDate As Date
     EndDate As Date
     BatchNo As Long
@@ -60,7 +60,7 @@ End Type
 Public Type tAlloc
     Company     As String
     Product     As String
-    OrderID     As String
+    orderId     As String
     StartDate   As Date
     EndDate     As Date
     BatchNo     As Long

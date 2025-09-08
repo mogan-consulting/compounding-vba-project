@@ -60,13 +60,13 @@ Public Function NzDate(ByVal v As Variant, Optional ByVal def As Date = 0) As Da
     If IsDate(v) Then NzDate = CDate(v): Exit Function
     On Error GoTo 0
 
-    Dim S As String, a() As String
-    S = Trim(CStr(v))
-    If Len(S) = 0 Then NzDate = def: Exit Function
+    Dim s As String, a() As String
+    s = Trim(CStr(v))
+    If Len(s) = 0 Then NzDate = def: Exit Function
 
     ' ?????
-    S = Replace(Replace(S, "/", "-"), ".", "-")
-    a = Split(S, "-")
+    s = Replace(Replace(s, "/", "-"), ".", "-")
+    a = Split(s, "-")
     If UBound(a) = 2 Then
         Dim y&, m&, d&
         If Len(a(0)) = 4 Then               ' yyyy-mm-dd
@@ -89,18 +89,18 @@ Public Function NzDouble(ByVal v As Variant, Optional ByVal def As Double = 0#) 
     ' ??:??????????????????????(123) ??
     If IsNumeric(v) Then NzDouble = CDbl(v): Exit Function
 
-    Dim S As String
-    S = Trim$(CStr(v))
-    If Len(S) = 0 Then NzDouble = def: Exit Function
+    Dim s As String
+    s = Trim$(CStr(v))
+    If Len(s) = 0 Then NzDouble = def: Exit Function
 
-    S = WorksheetFunction.Clean(S)
-    S = Replace$(S, Chr(160), " ")  ' NBSP
-    S = Replace$(S, " ", "")
-    S = Replace$(S, ",", "")
-    If Left$(S, 1) = "(" And Right$(S, 1) = ")" Then S = "-" & Mid$(S, 2, Len(S) - 2)
+    s = WorksheetFunction.Clean(s)
+    s = Replace$(s, Chr(160), " ")  ' NBSP
+    s = Replace$(s, " ", "")
+    s = Replace$(s, ",", "")
+    If Left$(s, 1) = "(" And Right$(s, 1) = ")" Then s = "-" & Mid$(s, 2, Len(s) - 2)
 
     On Error Resume Next
-    NzDouble = CDbl(S)
+    NzDouble = CDbl(s)
     If Err.Number <> 0 Then NzDouble = def: Err.Clear
     On Error GoTo 0
 End Function
@@ -142,9 +142,9 @@ Public Function AlignToAnchorWeekday(ByVal d As Date, ByVal anchorWd As Long) As
     AlignToAnchorWeekday = d + ((anchorWd - wd + 7) Mod 7)
 End Function
 
-Public Function FactorFromFGType(ByVal S As String) As Double
-    S = LCase$(Trim$(CStr(S)))
-    Select Case S
+Public Function FactorFromFGType(ByVal s As String) As Double
+    s = LCase$(Trim$(CStr(s)))
+    Select Case s
         Case "10ml", "10 ml": FactorFromFGType = 10.4
         Case "5ml", "5 ml":   FactorFromFGType = 5.4
         Case "3ml", "3 ml":   FactorFromFGType = 3.4
@@ -218,13 +218,13 @@ Public Function DaysOverlapInclusive(ByVal aStart As Date, ByVal aEnd As Date, _
         DaysOverlapInclusive = 0
         Exit Function
     End If
-    Dim S As Date, e As Date
-    If aStart > bStart Then S = aStart Else S = bStart
+    Dim s As Date, e As Date
+    If aStart > bStart Then s = aStart Else s = bStart
     If aEnd < bEnd Then e = aEnd Else e = bEnd
-    If e < S Then
+    If e < s Then
         DaysOverlapInclusive = 0
     Else
-        DaysOverlapInclusive = DateDiff("d", S, e) + 1
+        DaysOverlapInclusive = DateDiff("d", s, e) + 1
     End If
 End Function
 
@@ -260,5 +260,52 @@ Public Function ReadMinTonsByFGType(ByVal fgType As String) As Double
     End Select
     ' H?J = ?? +2
     ReadMinTonsByFGType = CDbl(NzDouble(ReadNamedValueAtOffset(SHEET_CFG, key, 2, 0#)))
+End Function
+
+
+
+'=== ? OrderID ?????????(??) ===
+Public Function LookupByOrderId(ByVal wb As Workbook, ByVal sheetName As String, _
+                                ByVal orderId As Long, ByVal targetHeader As String) As Variant
+    Dim ws As Worksheet, lastRow As Long
+    Dim colOrder As Long, colTarget As Long
+    Dim rowFound As Variant
+
+    On Error GoTo EH
+    Set ws = wb.Worksheets(sheetName)
+
+    '?????????????;???,????? Find
+    colOrder = FindCol(ws, "Order ID")
+    colTarget = FindCol(ws, targetHeader)
+    If colOrder = 0 Or colTarget = 0 Then GoTo EH
+
+    lastRow = ws.Cells(ws.Rows.Count, colOrder).End(xlUp).Row
+    If lastRow < 2 Then GoTo EH
+
+    rowFound = Application.Match(orderId, ws.Range(ws.Cells(2, colOrder), ws.Cells(lastRow, colOrder)), 0)
+    If IsError(rowFound) Then GoTo EH
+
+    LookupByOrderId = ws.Cells(1 + rowFound, colTarget).Value
+    Exit Function
+EH:
+    LookupByOrderId = vbNullString   '???????
+End Function
+
+'=== ? FG type ===
+Public Function GetFGTypeForOrder(ByVal wb As Workbook, ByVal runSheetName As String, _
+                                  ByVal orderId As Long) As String
+    GetFGTypeForOrder = CStr(LookupByOrderId(wb, runSheetName, orderId, "FG type"))
+End Function
+
+'=== ? plan order qty(pcs)===
+Public Function GetPlanQtyForOrder(ByVal wb As Workbook, ByVal runSheetName As String, _
+                                   ByVal orderId As Long) As Double
+    Dim v As Variant
+    v = LookupByOrderId(wb, runSheetName, orderId, "plan order qty")
+    If IsNumeric(v) Then
+        GetPlanQtyForOrder = CDbl(v)
+    Else
+        GetPlanQtyForOrder = 0#
+    End If
 End Function
 

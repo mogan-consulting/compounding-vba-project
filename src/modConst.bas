@@ -1,7 +1,7 @@
 Attribute VB_Name = "modConst"
 
 Option Explicit
-Public Const PRODUCT_VERSION As String = "0.1.2"
+Public Const PRODUCT_VERSION As String = "0.2.1"
 
 ' ========= Sheet & Column Names =========
 Public Const SHEET_SRC   As String = "Compounding"                ' ????
@@ -40,6 +40,20 @@ Public Const KEY_MIN_QTY_10ML As String = "Minimum FG qty (10ml)"
 Public Const KEY_MIN_QTY_5ML  As String = "Minimum FG qty (5ml)"
 Public Const KEY_MIN_QTY_3ML  As String = "Minimum FG qty (3ml)"
 
+'=== CompoundingAllocation columns ===
+Public Const COL_ALLOC_ORDERID      As Long = 1  'A
+Public Const COL_ALLOC_START        As Long = 2  'B
+Public Const COL_ALLOC_END          As Long = 3  'C
+Public Const COL_ALLOC_BATCH        As Long = 4  'D
+Public Const COL_ALLOC_ANCHOR       As Long = 5  'E
+Public Const COL_ALLOC_VALIDTHRU    As Long = 6  'F
+Public Const COL_ALLOC_USAGE_T      As Long = 7  'G
+Public Const COL_ALLOC_HORIZON_D    As Long = 8  'H
+
+'?? ????(????,??????)
+Public Const COL_ALLOC_FGTYPE       As Long = 9  'I
+Public Const COL_ALLOC_PLANQTY      As Long = 10 'J
+
 
 Public Function ReadLeadDays() As Long
     On Error GoTo Fallback
@@ -67,9 +81,9 @@ End Function
 
 Public Function ReadSourceSheetName() As String
     On Error Resume Next
-    Dim S$: S = Trim$(CStr(ThisWorkbook.Worksheets(SHEET_CFG).Range(CELL_SRC_SHEET).Value))
-    If Len(S) = 0 Then S = SHEET_SRC   ' ?????????
-    ReadSourceSheetName = S
+    Dim s$: s = Trim$(CStr(ThisWorkbook.Worksheets(SHEET_CFG).Range(CELL_SRC_SHEET).Value))
+    If Len(s) = 0 Then s = SHEET_SRC   ' ?????????
+    ReadSourceSheetName = s
 End Function
 
 
